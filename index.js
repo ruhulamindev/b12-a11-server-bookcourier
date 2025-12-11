@@ -45,9 +45,10 @@ app.post("/books_all", async (req,res) =>{
 })
 
 // -----------------------------------------------------------
-    // book_courier api
-    app.get("/book_courier", async (req,res) =>{
-        
+    // get all books_courier from db
+    app.get("/books_all", async (req,res) =>{
+        const result = await booksCollection.find().toArray()
+        res.send(result)
     })
 
 
