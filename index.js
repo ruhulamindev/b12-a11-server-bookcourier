@@ -3,12 +3,12 @@ const cors = require("cors");
 const app = express();
 require("dotenv").config();
 const port = process.env.PORT || 3000;
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const admin = require("firebase-admin");
 const serviceAccount = require("./service.json");
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert(serviceAccount),
 });
 
 // Middlewares
@@ -30,36 +30,39 @@ async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
     // await client.connect();
-// -----------------------------------------------------------
-const db = client.db("book_courier");
-const booksCollection = db.collection("books_all");
+    // -----------------------------------------------------------
+    const db = client.db("book_courier");
+    const booksCollection = db.collection("books_all");
 
-// -----------------------------------------------------------
-// save a book data in db
-app.post("/books_all", async (req,res) =>{
-    const bookData = req.body
-    console.log(bookData)
-    const result = await booksCollection.insertOne(bookData)
-    res.send(result)
+    // -----------------------------------------------------------
+    // save a book data in db
+    app.post("/books_all", async (req, res) => {
+      const bookData = req.body;
+      console.log(bookData);
+      const result = await booksCollection.insertOne(bookData);
+      res.send(result);
+    });
+
+    // -----------------------------------------------------------
+    // get all books from db
+    app.get("/books_all", async (req, res) => {
+      const result = await booksCollection.find().toArray();
+      res.send(result);
+    });
+
+    //-----------------------------------------------------------
+    // get one book and details page from db
+    app.get("/books_all/:id", async (req, res) => {
+      const id = req.params.id;
+      const result = await booksCollection.findOne({
+        _id: new ObjectId(id),
+      });
+      res.send(result);
+    });
+
+
+
     
-})
-
-// -----------------------------------------------------------
-    // get all books_courier from db
-    app.get("/books_all", async (req,res) =>{
-        const result = await booksCollection.find().toArray()
-        res.send(result)
-    })
-
-
-
-
-
-
-
-
-
-
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(
