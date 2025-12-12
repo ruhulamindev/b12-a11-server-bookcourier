@@ -4,6 +4,7 @@ const app = express();
 require("dotenv").config();
 const port = process.env.PORT || 3000;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
 const admin = require("firebase-admin");
 const serviceAccount = require("./service.json");
 
@@ -63,29 +64,57 @@ async function run() {
     //-----------------------------------------------------------
     //  add order collection
     const ordersCollection = db.collection("orders");
-
-    // POST request → save order
     app.post("/orders", async (req, res) => {
       try {
         const orderData = req.body;
-
+        
         // default values
         orderData.status = "pending";
         orderData.paymentStatus = "unpaid";
-        orderData.orderDate = new Date().toISOString().split("T")[0]; // yyyy-mm-dd
-
+        orderData.orderDate = new Date().toISOString().split("T")[0];
+        
         const result = await ordersCollection.insertOne(orderData);
 
         res.status(201).send({ success: true, data: result });
       } catch (error) {
         console.error(error);
         res
-          .status(500)
-          .send({ success: false, message: "Failed to save order" });
+        .status(500)
+        .send({ success: false, message: "Failed to save order" });
       }
     });
 
+    //-----------------------------------------------------------
 
+    // Get orders by user email
+app.get("/orders", async (req, res) => {
+  try {
+    const email = req.query.email;
+
+    const result = await ordersCollection.find({ email }).toArray();
+    res.send(result);
+
+  } catch (error) {
+    res.status(500).send({ message: "Failed to get orders" });
+  }
+});
+
+    //-----------------------------------------------------------
+    // payment endpoients
+    app.post('/create-checkout-session', async (req, res) => {
+    const paymentInfo = req.body
+    console.log(paymentInfo)
+  //   const session = await stripe.checkout.sessions.create({
+  //     line_items: [
+  //   {
+  //     price: 'price_1MotwRLkdIwHu7ixYcPLm5uZ',
+  //     quantity: 2,
+  //   },
+  // ],
+  // mode: 'payment',
+  //   })
+
+      })
 
 
     
