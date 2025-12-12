@@ -60,9 +60,36 @@ async function run() {
       res.send(result);
     });
 
+    //-----------------------------------------------------------
+    //  add order collection
+    const ordersCollection = db.collection("orders");
+
+    // POST request → save order
+    app.post("/orders", async (req, res) => {
+      try {
+        const orderData = req.body;
+
+        // default values
+        orderData.status = "pending";
+        orderData.paymentStatus = "unpaid";
+        orderData.orderDate = new Date().toISOString().split("T")[0]; // yyyy-mm-dd
+
+        const result = await ordersCollection.insertOne(orderData);
+
+        res.status(201).send({ success: true, data: result });
+      } catch (error) {
+        console.error(error);
+        res
+          .status(500)
+          .send({ success: false, message: "Failed to save order" });
+      }
+    });
+
+
 
 
     
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(
