@@ -22,7 +22,7 @@ app.use(
 );
 
 app.use(express.json());
-
+// mongodb connection url
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.ftpnek1.mongodb.net/?appName=Cluster0`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -34,16 +34,20 @@ const client = new MongoClient(uri, {
   },
 });
 
+// main asyn function
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
     // await client.connect();
+
     // -----------------------------------------------------------
+    // database name
     const db = client.db("book_courier");
+    // book collection
     const booksCollection = db.collection("books_all");
 
     // -----------------------------------------------------------
-    // save a book data in db
+    // book add api
     app.post("/books_all", async (req, res) => {
       const bookData = req.body;
       console.log(bookData);
@@ -52,14 +56,14 @@ async function run() {
     });
 
     // -----------------------------------------------------------
-    // get all books from db
+    // all book get api
     app.get("/books_all", async (req, res) => {
       const result = await booksCollection.find().toArray();
       res.send(result);
     });
 
     //-----------------------------------------------------------
-    // get one book and details page from db
+    // single book details api
     app.get("/books_all/:id", async (req, res) => {
       const id = req.params.id;
       const result = await booksCollection.findOne({
@@ -69,13 +73,16 @@ async function run() {
     });
 
     //-----------------------------------------------------------
-    //  add order collection
+    // order collection
+    //-----------------------------------------------------------
     const ordersCollection = db.collection("orders");
+
+    //  order save api
     app.post("/orders", async (req, res) => {
       try {
         const orderData = req.body;
 
-        // default values
+        // default order values
         orderData.status = "pending";
         orderData.paymentStatus = "unpaid";
         orderData.orderDate = new Date().toISOString().split("T")[0];
@@ -92,13 +99,13 @@ async function run() {
     });
 
     //-----------------------------------------------------------
-    // Get orders by user email
+    // user personal orders by email api
     app.get("/orders", async (req, res) => {
       try {
         const email = req.query.email;
 
         const result = await ordersCollection
-          .find({ "customer.email": email })
+          .find({ "customer.email": email }) // customar email onujai
           .toArray();
         res.send(result);
       } catch (error) {
@@ -107,7 +114,7 @@ async function run() {
     });
 
     //-----------------------------------------------------------
-    // Payment Method
+    // stripe payment session create / payment method
     app.post("/create-checkout-session", async (req, res) => {
       const paymentInfo = req.body;
       console.log(paymentInfo);
@@ -131,11 +138,55 @@ async function run() {
           bookId: paymentInfo?.bookId,
           customerEmail: paymentInfo?.customer.email,
         },
-        success_url: `${process.env.CLIENT_DOMAIN}/dashboard/invoices?session_id={CHECKOUT_SESSION_ID}`,
+        success_url: `${process.env.CLIENT_DOMAIN}/dashboard/my-orders?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.CLIENT_DOMAIN}/dashboard/my-orders`,
       });
       res.send({ url: session.url });
     });
+
+    //-----------------------------------------------------------
+    // orders cancel api (user/seller)
+    app.patch("/orders/cancel/:id", async (req, res) => {
+      const id = req.params.id;
+
+      const result = await ordersCollection.updateOne(
+        { _id: new ObjectId(id) },
+        {
+          $set: {
+            status: "cancelled",
+          },
+        }
+      );
+      res.send(result);
+    });
+
+    //-----------------------------------------------------------
+    // librarian / seller  order get
+    app.get("/orders/librarian", async (req, res) => {
+      const email = req.query.email;
+      if (!email) return res.status(400).send({ error: "Email required" });
+
+      const orders = await ordersCollection
+        .find({ "seller.email": email }) // seller email onujai
+        .toArray();
+
+      res.send(orders);
+    });
+
+    // ------------------------------------------------------------------------
+    // order status update (shipped / delivered)
+    app.patch("/orders/status/:id", async (req, res) => {
+      const id = req.params.id;
+      const { status } = req.body;
+
+      const result = await ordersCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status } }
+      );
+
+      res.send(result);
+    });
+    // ------------------------------------------------------------------------
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
