@@ -59,9 +59,35 @@ async function run() {
     });
 
     // -----------------------------------------------------------
-    // all book get api
+    // all book get api (only published)
     app.get("/books_all", async (req, res) => {
-      const result = await booksCollection.find().toArray();
+      const result = await booksCollection
+        .find({ status: "published" })
+        .toArray();
+      res.send(result);
+    });
+
+    // ------------------------------
+    // seller books (own books, published/unpublished)
+    app.get("/books/seller", async (req, res) => {
+      const email = req.query.email;
+      if (!email) return res.status(400).send({ message: "Email required" });
+
+      const books = await booksCollection
+        .find({ "seller.email": email })
+        .toArray();
+      res.send(books);
+    });
+
+    // ------------------------------
+    // update a book (for seller)
+    app.patch("/books_all/:id", async (req, res) => {
+      const id = req.params.id;
+      const updatedData = req.body;
+      const result = await booksCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updatedData }
+      );
       res.send(result);
     });
 
