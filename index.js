@@ -45,8 +45,11 @@ async function run() {
     const db = client.db("book_courier");
     // book collection
     const booksCollection = db.collection("books_all");
-
+    //-----------------------------------------------------------
+    // order collection
+    const ordersCollection = db.collection("orders");
     // -----------------------------------------------------------
+
     // book add api
     app.post("/books_all", async (req, res) => {
       const bookData = req.body;
@@ -73,10 +76,6 @@ async function run() {
     });
 
     //-----------------------------------------------------------
-    // order collection
-    //-----------------------------------------------------------
-    const ordersCollection = db.collection("orders");
-
     //  order save api
     app.post("/orders", async (req, res) => {
       try {
@@ -117,7 +116,7 @@ async function run() {
     // stripe payment session create / payment method
     app.post("/create-checkout-session", async (req, res) => {
       const paymentInfo = req.body;
-      console.log(paymentInfo);
+      // console.log(paymentInfo);
       const session = await stripe.checkout.sessions.create({
         line_items: [
           {
@@ -132,13 +131,15 @@ async function run() {
             quantity: paymentInfo?.quantity,
           },
         ],
-        customer_email: paymentInfo?.customer?.email,
         mode: "payment",
+        customer_email: paymentInfo?.customer?.email,
         metadata: {
           bookId: paymentInfo?.bookId,
+          orderId: paymentInfo?.orderId,
           customerEmail: paymentInfo?.customer.email,
+          quantity: paymentInfo?.quantity,
         },
-        success_url: `${process.env.CLIENT_DOMAIN}/dashboard/my-orders?session_id={CHECKOUT_SESSION_ID}`,
+        success_url: `${process.env.CLIENT_DOMAIN}/payment?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.CLIENT_DOMAIN}/dashboard/my-orders`,
       });
       res.send({ url: session.url });
@@ -188,6 +189,57 @@ async function run() {
     });
     // ------------------------------------------------------------------------
 
+    // payment success / endpoints
+    app.post("/payment-success", async (req, res) => {
+      try {
+        const { sessionId } = req.body;
+        const session = await stripe.checkout.sessions.retrieve(sessionId);
+        // console.log(session);
+
+        // const book = await booksCollection.findOne({
+        //   _id: new ObjectId(session.metadata.bookId),
+        // });
+
+        if (session.status !== "complete") {
+          return res.status(400).send({ message: "Payment not completed" });
+
+          // const orderInfo = {
+          //   bookId: session.metadata.bookId,
+          //   transactionId: session.payment_intent,
+          //   customerEmail: session.metadata.customerEmail,
+          //   status: "pending",
+          //   seller: book.seller,
+          //   name: book.name,
+          //   price: book.price,
+          //   category: book.category,
+          //   quantity: session.metadata.quantity,
+          //   totalPrice: book.price * session.metadata.quantity,
+          // };
+          // console.log(orderInfo);
+        }
+        const orderId = session.metadata.orderId;
+
+        const result = await ordersCollection.updateOne(
+          { _id: new ObjectId(orderId) },
+          {
+            $set: {
+              paymentStatus: "paid",
+              transactionId: session.payment_intent,
+            },
+          }
+        );
+        res.send({
+          success: true,
+          message: "Payment successful, order updated",
+          result,
+        });
+      } catch (error) {
+        console.error("Payment success error:", error);
+        res.status(500).send({ message: "Payment update failed" });
+      }
+    });
+
+    // ------------------------------------------------------------------------
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(
