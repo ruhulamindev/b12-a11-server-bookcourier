@@ -43,11 +43,19 @@ async function run() {
     // -----------------------------------------------------------
     // database name
     const db = client.db("book_courier");
+    // --------------------------------------
+
     // book collection
     const booksCollection = db.collection("books_all");
     //-----------------------------------------------------------
+
     // order collection
     const ordersCollection = db.collection("orders");
+    // -----------------------------------------------------------
+    
+    // user collection
+    const userCollection = db.collection("users")
+    
     // -----------------------------------------------------------
 
     // book add api
@@ -266,6 +274,26 @@ async function run() {
     });
 
     // ------------------------------------------------------------------------
+// save or update a user in db
+app.post("/user",async(req,res) =>{
+  const userData = req.body
+  // console.log(userData)
+  const result = await userCollection.insertOne(userData)
+  res.send(userData)
+})
+
+
+
+
+
+
+
+
+
+
+
+    // ------------------------------------------------------------------------
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(
