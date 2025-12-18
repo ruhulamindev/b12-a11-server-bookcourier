@@ -52,10 +52,28 @@ async function run() {
     // order collection
     const ordersCollection = db.collection("orders");
     // -----------------------------------------------------------
-    
+
     // user collection
-    const userCollection = db.collection("users")
-    
+    const userCollection = db.collection("users");
+
+    // -----------------------------------------------------------
+    // jwt middlewares
+    const verifyJWT = async (req, res, next) => {
+      const token = req?.headers?.authorization?.split(" ")[1];
+      console.log(token);
+      if (!token)
+        return res.status(401).send({ message: "Unauthorized Access!" });
+      try {
+        const decoded = await admin.auth().verifyIdToken(token);
+        req.tokenEmail = decoded.email;
+        console.log(decoded);
+        next();
+      } catch (err) {
+        console.log(err);
+        return res.status(401).send({ message: "Unauthorized Access!", err });
+      }
+    };
+
     // -----------------------------------------------------------
 
     // book add api
@@ -133,9 +151,9 @@ async function run() {
 
     //-----------------------------------------------------------
     // user personal orders by email api
-    app.get("/orders", async (req, res) => {
+    app.get("/orders", verifyJWT, async (req, res) => {
       try {
-        const email = req.query.email;
+        const email = req.tokenEmail;
 
         const result = await ordersCollection
           .find({ "customer.email": email }) // customar email onujai
@@ -274,23 +292,44 @@ async function run() {
     });
 
     // ------------------------------------------------------------------------
-// save or update a user in db
-app.post("/user",async(req,res) =>{
-  const userData = req.body
-  // console.log(userData)
-  const result = await userCollection.insertOne(userData)
-  res.send(userData)
-})
+    // save or update a user in db
+    app.post("/user", async (req, res) => {
+      const userData = req.body;
+      // console.log(userData)
+      userData.created_at = new Date().toISOString();
+      userData.last_loggedIn = new Date().toISOString();
+      userData.role = "customer";
 
+      const query = {
+        email: userData.email,
+      };
 
+      const alreadyExists = await userCollection.findOne(query);
+      console.log("User Already Exists--->", !!alreadyExists);
+      if (alreadyExists) {
+        console.log("Updateing user info.....");
+        const result = await userCollection.updateOne(query, {
+          $set: {
+            last_loggedIn: new Date().toISOString(),
+          },
+        });
+        return res.send(result);
+      }
 
+      console.log("Saving new user info.....");
 
+      const result = await userCollection.insertOne(userData);
+      res.send(result);
+    });
 
-
-
-
-
-
+    // ------------------------------------------------------------------------
+    // get a user's role
+    app.get("/user/role/", verifyJWT, async (req, res) => {
+      // console.log(req.tokenEmail)
+      // const email = req.params.email;
+      const result = await userCollection.findOne({ email: req.tokenEmail });
+      res.send({ role: result?.role });
+    });
 
     // ------------------------------------------------------------------------
 
