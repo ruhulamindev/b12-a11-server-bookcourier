@@ -57,6 +57,10 @@ async function run() {
     const userCollection = db.collection("users");
 
     // -----------------------------------------------------------
+    // sellerRequestsCollection
+    const sellerRequestsCollection = db.collection("librarianRequests");
+
+    // -----------------------------------------------------------
     // jwt middlewares
     const verifyJWT = async (req, res, next) => {
       const token = req?.headers?.authorization?.split(" ")[1];
@@ -277,6 +281,7 @@ async function run() {
             $set: {
               paymentStatus: "paid",
               transactionId: session.payment_intent,
+              totalPrice: session.amount_total / 100,
             },
           }
         );
@@ -329,6 +334,69 @@ async function run() {
       // const email = req.params.email;
       const result = await userCollection.findOne({ email: req.tokenEmail });
       res.send({ role: result?.role });
+    });
+    // ------------------------------------------------------------------------
+    // save become-seller request
+    app.post("/become-librarian", verifyJWT, async (req, res) => {
+      const email = req.tokenEmail;
+      const { message } = req.body;
+
+      const alreadyExists = await sellerRequestsCollection.findOne({ email });
+      if (alreadyExists)
+        return res
+          .status(409)
+          .send({ message: "You have already sent a request!" });
+
+      const result = await sellerRequestsCollection.insertOne({
+        email,
+        message,
+        status: "pending",
+        createdAt: new Date(),
+      });
+      res.send(result);
+    });
+
+    // ------------------------------------------------------------------------
+    // invoices api (paid orders only)
+    app.get("/invoices", verifyJWT, async (req, res) => {
+      try {
+        const email = req.tokenEmail;
+
+        const invoices = await ordersCollection
+          .find({
+            "customer.email": email,
+            paymentStatus: "paid",
+          })
+          .project({
+            transactionId: 1,
+            bookName: 1,
+            bookPrice: 1,
+            quantity: 1,
+            totalPrice: 1,
+            orderDate: 1,
+          })
+
+          .toArray();
+
+        res.send(invoices);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to load invoices" });
+      }
+    });
+
+    // ------------------------------------------------------------------------
+    // get current user's librarian requests
+    app.get("/librarian-requests", verifyJWT, async (req, res) => {
+      try {
+        const email = req.tokenEmail;
+        const requests = await sellerRequestsCollection
+          .find({ email })
+          .sort({ createdAt: -1 })
+          .toArray();
+        res.send(requests);
+      } catch (err) {
+        res.status(500).send({ message: "Failed to fetch requests" });
+      }
     });
 
     // ------------------------------------------------------------------------
