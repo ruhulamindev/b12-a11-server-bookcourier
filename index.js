@@ -400,6 +400,27 @@ async function run() {
     });
 
     // ------------------------------------------------------------------------
+    // Delete a book
+    app.delete("/books_all/:id", async (req, res) => {
+      const id = req.params.id;
+      try {
+        const result = await booksCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+        if (result.deletedCount > 0) {
+          res.send({ success: true, message: "Book deleted successfully" });
+        } else {
+          res.status(404).send({ success: false, message: "Book not found" });
+        }
+      } catch (error) {
+        console.error("Delete error:", error);
+        res
+          .status(500)
+          .send({ success: false, message: "Failed to delete book" });
+      }
+    });
+
+    // ------------------------------------------------------------------------
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
