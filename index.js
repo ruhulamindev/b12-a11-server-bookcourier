@@ -2,12 +2,15 @@ const express = require("express");
 const cors = require("cors");
 const app = express();
 require("dotenv").config();
+
 const port = process.env.PORT || 3000;
+
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const admin = require("firebase-admin");
 const serviceAccount = require("./service.json");
 
+// firebase admin initialization
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
@@ -20,8 +23,8 @@ app.use(
     optionsSuccessStatus: 200,
   })
 );
-
 app.use(express.json());
+
 // mongodb connection url
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.ftpnek1.mongodb.net/?appName=Cluster0`;
 
@@ -40,28 +43,25 @@ async function run() {
     // Connect the client to the server	(optional starting in v4.7)
     // await client.connect();
 
-    // -----------------------------------------------------------
+    // --------------------------------------
     // database name
     const db = client.db("book_courier");
     // --------------------------------------
 
-    // book collection
+    // book collection db
     const booksCollection = db.collection("books_all");
-    //-----------------------------------------------------------
-
-    // order collection
+    //------------------------------------------
+    // order collection db
     const ordersCollection = db.collection("orders");
-    // -----------------------------------------------------------
-
-    // user collection
+    // ---------------------------------------------
+    // user collection db
     const userCollection = db.collection("users");
-
-    // -----------------------------------------------------------
-    // sellerRequestsCollection
+    // --------------------------------------------
+    // sellerRequestsCollection db
     const sellerRequestsCollection = db.collection("librarianRequests");
 
-    // -----------------------------------------------------------
-    // jwt middlewares
+    // ---------------------------------------------
+    // jwt verification middlewares
     const verifyJWT = async (req, res, next) => {
       const token = req?.headers?.authorization?.split(" ")[1];
       console.log(token);
@@ -78,9 +78,8 @@ async function run() {
       }
     };
 
-    // -----------------------------------------------------------
-
-    // all-books add/save api
+    // -------------------------------------------
+    // all-books add/save api in db
     app.post("/books_all", async (req, res) => {
       const bookData = req.body;
       console.log(bookData);
@@ -98,7 +97,7 @@ async function run() {
     });
 
     // ------------------------------
-    // Liberiyan book published/unpublished update api (add book owner published/unpublished)
+    // get published/unpublished book api (librarian/seller)
     app.get("/books/seller", async (req, res) => {
       const email = req.query.email;
       if (!email) return res.status(400).send({ message: "Email required" });
@@ -110,7 +109,7 @@ async function run() {
     });
 
     // ------------------------------
-    // update a book detais (for seller)
+    // update a book-detais (for librarian/seller)
     app.patch("/books_all/:id", async (req, res) => {
       const id = req.params.id;
       const updatedData = req.body;
@@ -122,7 +121,7 @@ async function run() {
     });
 
     //-----------------------------------------------------------
-    // single book details get api
+    // get single book details page api
     app.get("/books_all/:id", async (req, res) => {
       const id = req.params.id;
       const result = await booksCollection.findOne({
@@ -132,7 +131,7 @@ async function run() {
     });
 
     //-----------------------------------------------------------
-    //  order save api
+    //  db customer order save api
     app.post("/orders", async (req, res) => {
       try {
         const orderData = req.body;
@@ -154,7 +153,7 @@ async function run() {
     });
 
     //-----------------------------------------------------------
-    // user personal orders get by email api
+    // user personal orders get by email
     app.get("/orders", verifyJWT, async (req, res) => {
       try {
         const email = req.tokenEmail;
@@ -169,7 +168,7 @@ async function run() {
     });
 
     //-----------------------------------------------------------
-    // orders cancel api (user/seller)
+    // orders cancel api (user or librarian/seller)
     app.patch("/orders/cancel/:id", async (req, res) => {
       const id = req.params.id;
 
@@ -185,7 +184,7 @@ async function run() {
     });
 
     //-----------------------------------------------------------
-    // librarian/seller  order get (librarian / seller manage order api)
+    // librarian/seller  order get (librarian/seller manage order api)
     app.get("/orders/librarian", async (req, res) => {
       const email = req.query.email;
       if (!email) return res.status(400).send({ error: "Email required" });
@@ -198,7 +197,7 @@ async function run() {
     });
 
     // ------------------------------------------------------------------------
-    // order status update (shipped / delivered)
+    // order status update {shipped/delivered (librarian/seller)}
     app.patch("/orders/status/:id", async (req, res) => {
       const id = req.params.id;
       const { status } = req.body;
@@ -212,7 +211,7 @@ async function run() {
     });
 
     //-----------------------------------------------------------
-    // stripe payment session create / payment method
+    // stripe payment session create/payment method
     app.post("/create-checkout-session", async (req, res) => {
       const paymentInfo = req.body;
       // console.log(paymentInfo);
@@ -245,8 +244,7 @@ async function run() {
     });
 
     // ------------------------------------------------------------------------
-
-    // payment success / endpoints
+    // payment success/endpoints
     app.post("/payment-success", async (req, res) => {
       try {
         const { sessionId } = req.body;
@@ -256,10 +254,8 @@ async function run() {
         // const book = await booksCollection.findOne({
         //   _id: new ObjectId(session.metadata.bookId),
         // });
-
         if (session.status !== "complete") {
           return res.status(400).send({ message: "Payment not completed" });
-
           // const orderInfo = {
           //   bookId: session.metadata.bookId,
           //   transactionId: session.payment_intent,
@@ -298,7 +294,7 @@ async function run() {
     });
 
     // ------------------------------------------------------------------------
-    // users save or update in db
+    // new users save and last login for existing user
     app.post("/user", async (req, res) => {
       const userData = req.body;
       // console.log(userData)
@@ -361,15 +357,16 @@ async function run() {
     });
 
     // ------------------------------------------------------------------------
-    // get a user's role
+    // get logged in user role
     app.get("/user/role/", verifyJWT, async (req, res) => {
       // console.log(req.tokenEmail)
       // const email = req.params.email;
       const result = await userCollection.findOne({ email: req.tokenEmail });
       res.send({ role: result?.role });
     });
+
     // ------------------------------------------------------------------------
-    // save become-seller request
+    // save become a librarian request
     app.post("/become-librarian", verifyJWT, async (req, res) => {
       const email = req.tokenEmail;
       const { message } = req.body;
@@ -391,18 +388,55 @@ async function run() {
 
     // ------------------------------------------------------------------------
     // // get current user's librarian requests
-    // app.get("/librarian-requests", verifyJWT, async (req, res) => {
-    //   try {
-    //     const email = req.tokenEmail;
-    //     const requests = await sellerRequestsCollection
-    //       .find({ email })
-    //       .sort({ createdAt: -1 })
-    //       .toArray();
-    //     res.send(requests);
-    //   } catch (err) {
-    //     res.status(500).send({ message: "Failed to fetch requests" });
-    //   }
-    // });
+    app.get("/librarian-requests", verifyJWT, async (req, res) => {
+      try {
+        const email = req.tokenEmail;
+        const requests = await sellerRequestsCollection
+          .find({ email })
+          .sort({ createdAt: -1 })
+          .toArray();
+        res.send(requests);
+      } catch (err) {
+        res.status(500).send({ message: "Failed to fetch requests" });
+      }
+    });
+
+    // ------------------------------------------------------------------------
+    // update user role (admin) and remove request
+    app.patch("/user/role/:id", async (req, res) => {
+      const userId = req.params.id;
+      const { newRole } = req.body;
+
+      try {
+        // find user
+        const user = await userCollection.findOne({
+          _id: new ObjectId(userId),
+        });
+        if (!user)
+          return res
+            .status(404)
+            .send({ success: false, message: "User not found" });
+
+        // update role
+        await userCollection.updateOne(
+          { _id: new ObjectId(userId) },
+          { $set: { role: newRole } }
+        );
+
+        // remove request from librarianRequests
+        await sellerRequestsCollection.deleteOne({ email: user.email });
+
+        res.send({
+          success: true,
+          message: "Role updated and request removed",
+        });
+      } catch (err) {
+        console.error(err);
+        res
+          .status(500)
+          .send({ success: false, message: "Failed to update role" });
+      }
+    });
 
     // ------------------------------------------------------------------------
     // invoices api (paid orders only)
@@ -454,6 +488,28 @@ async function run() {
     });
 
     // ------------------------------------------------------------------------
+    // Admin get all librarian requests
+    app.get("/admin/librarian-requests", verifyJWT, async (req, res) => {
+      try {
+        const adminUser = await userCollection.findOne({
+          email: req.tokenEmail,
+        });
+
+        if (adminUser?.role !== "admin") {
+          return res.status(403).send({ message: "Forbidden access" });
+        }
+
+        const requests = await sellerRequestsCollection
+          .find({})
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.send(requests);
+      } catch (err) {
+        res.status(500).send({ message: "Failed to fetch requests" });
+      }
+    });
+
     // ------------------------------------------------------------------------
 
     // Send a ping to confirm a successful connection
