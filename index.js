@@ -80,7 +80,7 @@ async function run() {
 
     // -----------------------------------------------------------
 
-    // book add api
+    // all-books add/save api
     app.post("/books_all", async (req, res) => {
       const bookData = req.body;
       console.log(bookData);
@@ -89,7 +89,7 @@ async function run() {
     });
 
     // -----------------------------------------------------------
-    // all book get api (only published)
+    // all-books get api (only published)
     app.get("/books_all", async (req, res) => {
       const result = await booksCollection
         .find({ status: "published" })
@@ -98,7 +98,7 @@ async function run() {
     });
 
     // ------------------------------
-    // seller books (own books, published/unpublished)
+    // Liberiyan book published/unpublished update api (add book owner published/unpublished)
     app.get("/books/seller", async (req, res) => {
       const email = req.query.email;
       if (!email) return res.status(400).send({ message: "Email required" });
@@ -110,7 +110,7 @@ async function run() {
     });
 
     // ------------------------------
-    // update a book (for seller)
+    // update a book detais (for seller)
     app.patch("/books_all/:id", async (req, res) => {
       const id = req.params.id;
       const updatedData = req.body;
@@ -122,7 +122,7 @@ async function run() {
     });
 
     //-----------------------------------------------------------
-    // single book details api
+    // single book details get api
     app.get("/books_all/:id", async (req, res) => {
       const id = req.params.id;
       const result = await booksCollection.findOne({
@@ -154,7 +154,7 @@ async function run() {
     });
 
     //-----------------------------------------------------------
-    // user personal orders by email api
+    // user personal orders get by email api
     app.get("/orders", verifyJWT, async (req, res) => {
       try {
         const email = req.tokenEmail;
@@ -166,6 +166,49 @@ async function run() {
       } catch (error) {
         res.status(500).send({ message: "Failed to get orders" });
       }
+    });
+
+    //-----------------------------------------------------------
+    // orders cancel api (user/seller)
+    app.patch("/orders/cancel/:id", async (req, res) => {
+      const id = req.params.id;
+
+      const result = await ordersCollection.updateOne(
+        { _id: new ObjectId(id) },
+        {
+          $set: {
+            status: "cancelled",
+          },
+        }
+      );
+      res.send(result);
+    });
+
+    //-----------------------------------------------------------
+    // librarian/seller  order get (librarian / seller manage order api)
+    app.get("/orders/librarian", async (req, res) => {
+      const email = req.query.email;
+      if (!email) return res.status(400).send({ error: "Email required" });
+
+      const orders = await ordersCollection
+        .find({ "seller.email": email }) // seller email onujai
+        .toArray();
+
+      res.send(orders);
+    });
+
+    // ------------------------------------------------------------------------
+    // order status update (shipped / delivered)
+    app.patch("/orders/status/:id", async (req, res) => {
+      const id = req.params.id;
+      const { status } = req.body;
+
+      const result = await ordersCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status } }
+      );
+
+      res.send(result);
     });
 
     //-----------------------------------------------------------
@@ -201,48 +244,6 @@ async function run() {
       res.send({ url: session.url });
     });
 
-    //-----------------------------------------------------------
-    // orders cancel api (user/seller)
-    app.patch("/orders/cancel/:id", async (req, res) => {
-      const id = req.params.id;
-
-      const result = await ordersCollection.updateOne(
-        { _id: new ObjectId(id) },
-        {
-          $set: {
-            status: "cancelled",
-          },
-        }
-      );
-      res.send(result);
-    });
-
-    //-----------------------------------------------------------
-    // librarian / seller  order get
-    app.get("/orders/librarian", async (req, res) => {
-      const email = req.query.email;
-      if (!email) return res.status(400).send({ error: "Email required" });
-
-      const orders = await ordersCollection
-        .find({ "seller.email": email }) // seller email onujai
-        .toArray();
-
-      res.send(orders);
-    });
-
-    // ------------------------------------------------------------------------
-    // order status update (shipped / delivered)
-    app.patch("/orders/status/:id", async (req, res) => {
-      const id = req.params.id;
-      const { status } = req.body;
-
-      const result = await ordersCollection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: { status } }
-      );
-
-      res.send(result);
-    });
     // ------------------------------------------------------------------------
 
     // payment success / endpoints
@@ -297,7 +298,7 @@ async function run() {
     });
 
     // ------------------------------------------------------------------------
-    // save or update a user in db
+    // users save or update in db
     app.post("/user", async (req, res) => {
       const userData = req.body;
       // console.log(userData)
@@ -328,6 +329,38 @@ async function run() {
     });
 
     // ------------------------------------------------------------------------
+    // get all users (admin view)
+    app.get("/users", async (req, res) => {
+      try {
+        const users = await userCollection
+          .find({})
+          .project({ name: 1, email: 1, role: 1, photoURL: 1 })
+          .toArray();
+        res.send(users);
+      } catch (error) {
+        console.error("Failed to fetch users:", error);
+        res.status(500).send({ message: "Failed to fetch users" });
+      }
+    });
+
+    // ------------------------------------------------------------------------
+    // update user profile in MongoDB
+    app.patch("/user/profile/update", verifyJWT, async (req, res) => {
+      const email = req.tokenEmail;
+      const { name, image } = req.body;
+
+      try {
+        const result = await userCollection.updateOne(
+          { email },
+          { $set: { name, image } }
+        );
+        res.send(result);
+      } catch (err) {
+        res.status(500).send({ message: "Failed to update user profile" });
+      }
+    });
+
+    // ------------------------------------------------------------------------
     // get a user's role
     app.get("/user/role/", verifyJWT, async (req, res) => {
       // console.log(req.tokenEmail)
@@ -350,11 +383,26 @@ async function run() {
       const result = await sellerRequestsCollection.insertOne({
         email,
         message,
-        status: "pending",
+        // status: "pending",
         createdAt: new Date(),
       });
       res.send(result);
     });
+
+    // ------------------------------------------------------------------------
+    // // get current user's librarian requests
+    // app.get("/librarian-requests", verifyJWT, async (req, res) => {
+    //   try {
+    //     const email = req.tokenEmail;
+    //     const requests = await sellerRequestsCollection
+    //       .find({ email })
+    //       .sort({ createdAt: -1 })
+    //       .toArray();
+    //     res.send(requests);
+    //   } catch (err) {
+    //     res.status(500).send({ message: "Failed to fetch requests" });
+    //   }
+    // });
 
     // ------------------------------------------------------------------------
     // invoices api (paid orders only)
@@ -385,22 +433,7 @@ async function run() {
     });
 
     // ------------------------------------------------------------------------
-    // get current user's librarian requests
-    app.get("/librarian-requests", verifyJWT, async (req, res) => {
-      try {
-        const email = req.tokenEmail;
-        const requests = await sellerRequestsCollection
-          .find({ email })
-          .sort({ createdAt: -1 })
-          .toArray();
-        res.send(requests);
-      } catch (err) {
-        res.status(500).send({ message: "Failed to fetch requests" });
-      }
-    });
-
-    // ------------------------------------------------------------------------
-    // Delete a book
+    // Delete a book (admin)
     app.delete("/books_all/:id", async (req, res) => {
       const id = req.params.id;
       try {
