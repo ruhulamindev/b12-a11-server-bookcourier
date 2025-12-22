@@ -612,6 +612,17 @@ async function run() {
     );
 
     // ------------------------------------------------------------------------
+    // Get all orders (Admin)
+    app.get("/orders/all", verifyJWT, verifyADMIN, async (req, res) => {
+      try {
+        const orders = await ordersCollection.find({}).toArray();
+        res.send(orders);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to fetch all orders" });
+      }
+    });
+
+    // ------------------------------------------------------------------------
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
