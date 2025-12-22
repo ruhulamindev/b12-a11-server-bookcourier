@@ -79,12 +79,52 @@ async function run() {
     };
 
     // -------------------------------------------
+    // role middleware
+    const verifyADMIN = async (req, res, next) => {
+      const email = req.tokenEmail;
+      const user = await userCollection.findOne({ email });
+      if (user?.role !== "admin")
+        return res
+          .status(403)
+          .send({ message: "Admin only Action", role: user?.role });
+
+      next();
+    };
+
+    // -------------------------------------------
+    // role middleware
+    const verifyLIBRARIAN = async (req, res, next) => {
+      const email = req.tokenEmail;
+      const user = await userCollection.findOne({ email });
+      if (user?.role !== "seller")
+        return res
+          .status(403)
+          .send({ message: "Librarian only Action", role: user?.role });
+
+      next();
+    };
+
+    // -------------------------------------------
     // all-books add/save api in db
-    app.post("/books_all", async (req, res) => {
-      const bookData = req.body;
-      console.log(bookData);
-      const result = await booksCollection.insertOne(bookData);
-      res.send(result);
+    app.post("/books_all", verifyJWT, verifyLIBRARIAN, async (req, res) => {
+      try {
+        const bookData = req.body;
+        if (bookData?.seller?.email !== req.tokenEmail) {
+          return res.status(403).send({
+            success: false,
+            message: "Forbidden: Invalid seller",
+          });
+        }
+        console.log(bookData);
+        const result = await booksCollection.insertOne(bookData);
+        res.send({ success: true, result });
+      } catch (error) {
+        console.error("Add book error:", error);
+        res.status(500).send({
+          success: false,
+          message: "Failed to add book",
+        });
+      }
     });
 
     // -----------------------------------------------------------
@@ -98,14 +138,37 @@ async function run() {
 
     // ------------------------------
     // get published/unpublished book api (librarian/seller)
-    app.get("/books/seller", async (req, res) => {
+    app.get("/books/seller", verifyJWT, verifyLIBRARIAN, async (req, res) => {
       const email = req.query.email;
+
       if (!email) return res.status(400).send({ message: "Email required" });
 
-      const books = await booksCollection
-        .find({ "seller.email": email })
-        .toArray();
-      res.send(books);
+      try {
+        // role check
+        const userRecord = await userCollection.findOne({
+          email: req.tokenEmail,
+        });
+        if (!["seller", "librarian"].includes(userRecord.role)) {
+          return res.status(403).send({ message: "Only sellers allowed" });
+        }
+
+        // token email vs query email match check
+        if (email !== req.tokenEmail) {
+          return res.status(403).send({
+            success: false,
+            message: "Forbidden access",
+          });
+        }
+
+        const books = await booksCollection
+          .find({ "seller.email": email })
+          .toArray();
+
+        res.send(books);
+      } catch (error) {
+        console.error("Seller books fetch error:", error);
+        res.status(500).send({ message: "Failed to fetch books" });
+      }
     });
 
     // ------------------------------
@@ -132,9 +195,15 @@ async function run() {
 
     //-----------------------------------------------------------
     //  db customer order save api
-    app.post("/orders", async (req, res) => {
+    app.post("/orders", verifyJWT, async (req, res) => {
       try {
         const orderData = req.body;
+
+        if (orderData.customer.email !== req.tokenEmail) {
+          return res
+            .status(403)
+            .send({ success: false, message: "Email mismatch. Forbidden!" });
+        }
 
         // default order values
         orderData.status = "pending";
@@ -169,7 +238,7 @@ async function run() {
 
     //-----------------------------------------------------------
     // orders cancel api (user or librarian/seller)
-    app.patch("/orders/cancel/:id", async (req, res) => {
+    app.patch("/orders/cancel/:id", verifyJWT, async (req, res) => {
       const id = req.params.id;
 
       const result = await ordersCollection.updateOne(
@@ -185,16 +254,25 @@ async function run() {
 
     //-----------------------------------------------------------
     // librarian/seller  order get (librarian/seller manage order api)
-    app.get("/orders/librarian", async (req, res) => {
-      const email = req.query.email;
-      if (!email) return res.status(400).send({ error: "Email required" });
+    app.get(
+      "/orders/librarian",
+      verifyJWT,
+      verifyLIBRARIAN,
+      async (req, res) => {
+        const email = req.query.email;
+        if (!email) return res.status(400).send({ error: "Email required" });
 
-      const orders = await ordersCollection
-        .find({ "seller.email": email }) // seller email onujai
-        .toArray();
+        if (email !== req.tokenEmail) {
+          return res.status(403).send({ message: "Forbidden" });
+        }
 
-      res.send(orders);
-    });
+        const orders = await ordersCollection
+          .find({ "seller.email": email }) // seller email onujai
+          .toArray();
+
+        res.send(orders);
+      }
+    );
 
     // ------------------------------------------------------------------------
     // order status update {shipped/delivered (librarian/seller)}
@@ -212,9 +290,15 @@ async function run() {
 
     //-----------------------------------------------------------
     // stripe payment session create/payment method
-    app.post("/create-checkout-session", async (req, res) => {
+    app.post("/create-checkout-session", verifyJWT, async (req, res) => {
       const paymentInfo = req.body;
       // console.log(paymentInfo);
+
+      // token email vs customer email check
+      if (paymentInfo.customer.email !== req.tokenEmail) {
+        return res.status(403).send({ message: "Unauthorized email!" });
+      }
+
       const session = await stripe.checkout.sessions.create({
         line_items: [
           {
@@ -326,8 +410,23 @@ async function run() {
 
     // ------------------------------------------------------------------------
     // get all users (admin view)
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyJWT, verifyADMIN, async (req, res) => {
       try {
+        const requestingUser = await userCollection.findOne({
+          email: req.tokenEmail,
+        });
+
+        if (!requestingUser) {
+          return res.status(404).send({ message: "User not found" });
+        }
+
+        // just admin access
+        if (requestingUser.role !== "admin") {
+          return res
+            .status(403)
+            .send({ message: "Forbidden: Admin access only" });
+        }
+
         const users = await userCollection
           .find({})
           .project({ name: 1, email: 1, role: 1, photoURL: 1 })
@@ -387,31 +486,28 @@ async function run() {
     });
 
     // ------------------------------------------------------------------------
-    // // get current user's librarian requests
-    app.get("/librarian-requests", verifyJWT, async (req, res) => {
-      try {
-        const email = req.tokenEmail;
-        const requests = await sellerRequestsCollection
-          .find({ email })
-          .sort({ createdAt: -1 })
-          .toArray();
-        res.send(requests);
-      } catch (err) {
-        res.status(500).send({ message: "Failed to fetch requests" });
-      }
-    });
-
-    // ------------------------------------------------------------------------
     // update user role (admin) and remove request
-    app.patch("/user/role/:id", async (req, res) => {
+    app.patch("/user/role/:id", verifyJWT, verifyADMIN, async (req, res) => {
       const userId = req.params.id;
       const { newRole } = req.body;
 
       try {
-        // find user
+        const adminUser = await userCollection.findOne({
+          email: req.tokenEmail,
+        });
+
+        if (adminUser?.role !== "admin") {
+          return res.status(403).send({
+            success: false,
+            message: "Forbidden: Admin access only",
+          });
+        }
+
+        // Find the user role
         const user = await userCollection.findOne({
           _id: new ObjectId(userId),
         });
+
         if (!user)
           return res
             .status(404)
@@ -489,26 +585,31 @@ async function run() {
 
     // ------------------------------------------------------------------------
     // Admin get all librarian requests
-    app.get("/admin/librarian-requests", verifyJWT, async (req, res) => {
-      try {
-        const adminUser = await userCollection.findOne({
-          email: req.tokenEmail,
-        });
+    app.get(
+      "/admin/librarian-requests",
+      verifyJWT,
+      verifyADMIN,
+      async (req, res) => {
+        try {
+          const adminUser = await userCollection.findOne({
+            email: req.tokenEmail,
+          });
 
-        if (adminUser?.role !== "admin") {
-          return res.status(403).send({ message: "Forbidden access" });
+          if (adminUser?.role !== "admin") {
+            return res.status(403).send({ message: "Forbidden access" });
+          }
+
+          const requests = await sellerRequestsCollection
+            .find({})
+            .sort({ createdAt: -1 })
+            .toArray();
+
+          res.send(requests);
+        } catch (err) {
+          res.status(500).send({ message: "Failed to fetch requests" });
         }
-
-        const requests = await sellerRequestsCollection
-          .find({})
-          .sort({ createdAt: -1 })
-          .toArray();
-
-        res.send(requests);
-      } catch (err) {
-        res.status(500).send({ message: "Failed to fetch requests" });
       }
-    });
+    );
 
     // ------------------------------------------------------------------------
 
