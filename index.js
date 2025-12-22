@@ -59,6 +59,9 @@ async function run() {
     // --------------------------------------------
     // sellerRequestsCollection db
     const sellerRequestsCollection = db.collection("librarianRequests");
+    // --------------------------------------------
+    // ReviewCollection db
+    const reviewCollection = db.collection("reviews");
 
     // ---------------------------------------------
     // jwt verification middlewares
@@ -622,6 +625,64 @@ async function run() {
       }
     });
 
+    // ------------------------------------------------------------------------
+    // Delete all orders of a specific book (seller/admin)
+    app.delete("/orders/book/:bookId", verifyJWT, async (req, res) => {
+      const bookId = req.params.bookId;
+
+      try {
+        const result = await ordersCollection.deleteMany({ bookId });
+        res.send({ success: true, deletedCount: result.deletedCount });
+      } catch (error) {
+        console.error("Delete book orders error:", error);
+        res
+          .status(500)
+          .send({ success: false, message: "Failed to delete related orders" });
+      }
+    });
+
+    // ------------------------------------------------------------------------
+    // get reviews of a book
+    app.get("/reviews", async (req, res) => {
+      const { bookId } = req.query;
+      if (!bookId)
+        return res.status(400).send({ message: "bookId is required" });
+
+      try {
+        const reviews = await reviewCollection
+          .find({ bookId })
+          .sort({ createdAt: -1 })
+          .toArray();
+        res.status(200).send(reviews);
+      } catch (err) {
+        console.error("Fetch reviews error:", err);
+        res.status(500).send({ message: "Failed to fetch reviews", err });
+      }
+    });
+
+    // post a review (JWT protected)
+    app.post("/reviews", verifyJWT, async (req, res) => {
+      try {
+        const reviewData = req.body;
+        if (!reviewData.bookId || !reviewData.comment || !reviewData.rating) {
+          return res
+            .status(400)
+            .send({ message: "bookId, comment and rating are required" });
+        }
+
+        reviewData.reviewer = {
+          email: req.tokenEmail,
+          name: reviewData.reviewer?.name || "Anonymous",
+        };
+        reviewData.createdAt = new Date();
+
+        const result = await reviewCollection.insertOne(reviewData);
+        res.status(201).send({ success: true, result });
+      } catch (err) {
+        console.error("Add review error:", err);
+        res.status(500).send({ message: "Failed to add review", err });
+      }
+    });
     // ------------------------------------------------------------------------
 
     // Send a ping to confirm a successful connection
